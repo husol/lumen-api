@@ -1,0 +1,59 @@
+# Official docker image.
+image: trankimhieu/aw-docker-ci
+
+services:
+  - docker:dind
+
+build_images:
+  stage: build
+  script:
+    # Docker build
+    - ./docker-build.sh
+    - export IMAGE_TAG=$(echo -en $CI_COMMIT_REF_NAME | tr -c '[:alnum:]_.-' '-')
+    # ECS Registry
+    - docker tag cnv-v2-api:latest $ECS_REGISTRY/$ECS_REGISTRY_IMAGE:$IMAGE_TAG
+    - aws ecr get-login --no-include-email --region ap-southeast-1 | sh -
+    - docker push $ECS_REGISTRY/$ECS_REGISTRY_IMAGE:$IMAGE_TAG
+    ###
+    # Docker build queue
+    - ./docker-build.queue.sh
+    - export IMAGE_TAG=$(echo -en $CI_COMMIT_REF_NAME | tr -c '[:alnum:]_.-' '-')
+    # ECS Registry
+    - docker tag cnv-v2-api-queue:latest $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_QUEUE:$IMAGE_TAG
+    - aws ecr get-login --no-include-email --region ap-southeast-1 | sh -
+    - docker push $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_QUEUE:$IMAGE_TAG
+    ###
+    # Docker build schedule
+    - ./docker-build.schedule.sh
+    - export IMAGE_TAG=$(echo -en $CI_COMMIT_REF_NAME | tr -c '[:alnum:]_.-' '-')
+    # ECS Registry
+    - docker tag cnv-v2-api-schedule:latest $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_SCHEDULE:$IMAGE_TAG
+    - aws ecr get-login --no-include-email --region ap-southeast-1 | sh -
+    - docker push $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_SCHEDULE:$IMAGE_TAG
+
+  only:
+    - develop
+    - master
+
+ecs_staging:
+  stage: deploy
+  script:
+    - export IMAGE_TAG=$(echo -en $CI_COMMIT_REF_NAME | tr -c '[:alnum:]_.-' '-')
+    - /scripts/ecs-deploy -c $ECS_CLUSTER_STAGING -n $ECS_SERVICE -i $ECS_REGISTRY/$ECS_REGISTRY_IMAGE:$IMAGE_TAG -t 1200 --enable-rollback
+    - /scripts/ecs-deploy -c $ECS_CLUSTER_STAGING -n $ECS_SERVICE_QUEUE -i $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_QUEUE:$IMAGE_TAG -t 1200 --enable-rollback
+    - /scripts/ecs-deploy -c $ECS_CLUSTER_STAGING -n $ECS_SERVICE_SCHEDULE -i $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_SCHEDULE:$IMAGE_TAG -t 1200 --enable-rollback
+    - python /scripts/slack_notify.py
+  only:
+    - develop
+
+ecs_prod:
+  stage: deploy
+  script:
+    - export IMAGE_TAG=$(echo -en $CI_COMMIT_REF_NAME | tr -c '[:alnum:]_.-' '-')
+    - /scripts/ecs-deploy -c $ECS_CLUSTER_PROD -n $ECS_SERVICE -i $ECS_REGISTRY/$ECS_REGISTRY_IMAGE:$IMAGE_TAG -t 1200 --enable-rollback
+    - /scripts/ecs-deploy -c $ECS_CLUSTER_PROD -n $ECS_SERVICE_QUEUE -i $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_QUEUE:$IMAGE_TAG -t 1200 --enable-rollback
+    - /scripts/ecs-deploy -c $ECS_CLUSTER_PROD -n $ECS_SERVICE_SCHEDULE -i $ECS_REGISTRY/$ECS_REGISTRY_IMAGE_SCHEDULE:$IMAGE_TAG -t 1200 --enable-rollback
+    - python /scripts/slack_notify.py
+  only:
+    - master
+

@@ -1,0 +1,5 @@
+- Copy `env.local` to `.env`
+- Update your `.env` file
+- Run `bash docker-build.sh`
+- Run `run-cnv-web.sh port_out_num`
+- Visit browser, `http://localhost:port_out_num`
